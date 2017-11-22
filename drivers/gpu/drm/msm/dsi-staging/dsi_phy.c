@@ -664,7 +664,7 @@ int dsi_phy_set_power_state(struct msm_dsi_phy *dsi_phy, bool enable)
 			}
 		}
 	} else {
-		if (dsi_phy->dsi_phy_state == DSI_PHY_ENGINE_OFF &&
+		if (dsi_phy->dsi_phy_state == DSI_PHY_ENGINE_ON &&
 				dsi_phy->regulator_required) {
 			rc = dsi_pwr_enable_regulator(
 				&dsi_phy->pwr_info.phy_pwr, false);
