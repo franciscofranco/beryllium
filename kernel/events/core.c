@@ -4289,7 +4289,7 @@ static DEFINE_SPINLOCK(zombie_list_lock);
  * object, it will not preserve its functionality. Once the last 'user'
  * gives up the object, we'll destroy the thing.
  */
-int perf_event_release_kernel(struct perf_event *event)
+static int perf_event_release(struct perf_event *event)
 {
 	struct perf_event_context *ctx = event->ctx;
 	struct perf_event *child, *tmp;
@@ -4415,6 +4415,14 @@ again:
 
 no_ctx:
 	put_event(event); /* Must be the 'last' reference */
+	return 0;
+}
+
+int perf_event_release_kernel(struct perf_event *event)
+{
+	get_online_cpus();
+	perf_event_release(event);
+	put_online_cpus();
 	return 0;
 }
 EXPORT_SYMBOL_GPL(perf_event_release_kernel);
@@ -11141,7 +11149,7 @@ static void perf_event_zombie_cleanup(unsigned int cpu)
 		 * PMU expects it to be in an active state
 		 */
 		event->state = PERF_EVENT_STATE_ACTIVE;
-		perf_event_release_kernel(event);
+		perf_event_release(event);
 
 		spin_lock(&zombie_list_lock);
 	}
