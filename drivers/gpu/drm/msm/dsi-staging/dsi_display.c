@@ -34,6 +34,12 @@
 #include "dsi_pwr.h"
 #include "sde_dbg.h"
 
+static short backlight_min = 0;
+module_param(backlight_min, short, 0644);
+
+static struct pm_qos_request lcdspeedup_little_cpu_qos;
+static struct pm_qos_request lcdspeedup_big_cpu_qos;
+
 #define to_dsi_display(x) container_of(x, struct dsi_display, host)
 #define INT_BASE_10 10
 #define NO_OVERRIDE -1
@@ -166,6 +172,9 @@ int dsi_display_set_backlight(void *display, u32 bl_lvl)
 	bl_temp = bl_lvl * bl_scale / MAX_BL_SCALE_LEVEL;
 
 	bl_scale_ad = panel->bl_config.bl_scale_ad;
+
+	if (bl_temp != 0 && bl_temp < backlight_min)
+		bl_temp = backlight_min;
 
 	pr_debug("bl_scale = %u, bl_scale_ad = %u, bl_lvl = %u\n",
 		bl_scale, bl_scale_ad, (u32)bl_temp);
