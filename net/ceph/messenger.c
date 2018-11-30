@@ -588,9 +588,15 @@ static int ceph_tcp_sendpage(struct socket *sock, struct page *page,
 	int ret;
 	struct kvec iov;
 
-	/* sendpage cannot properly handle pages with page_count == 0,
-	 * we need to fallback to sendmsg if that's the case */
-	if (page_count(page) >= 1)
+	/*
+	 * sendpage cannot properly handle pages with page_count == 0,
+	 * we need to fall back to sendmsg if that's the case.
+	 *
+	 * Same goes for slab pages: skb_can_coalesce() allows
+	 * coalescing neighboring slab objects into a single frag which
+	 * triggers one of hardened usercopy checks.
+	 */
+	if (page_count(page) >= 1 && !PageSlab(page))
 		return __ceph_tcp_sendpage(sock, page, offset, size, more);
 
 	iov.iov_base = kmap(page) + offset;
@@ -2512,6 +2518,11 @@ static int try_write(struct ceph_connection *con)
 	int ret = 1;
 
 	dout("try_write start %p state %lu\n", con, con->state);
+	if (con->state != CON_STATE_PREOPEN &&
+	    con->state != CON_STATE_CONNECTING &&
+	    con->state != CON_STATE_NEGOTIATING &&
+	    con->state != CON_STATE_OPEN)
+		return 0;
 
 more:
 	dout("try_write out_kvec_bytes %d\n", con->out_kvec_bytes);
@@ -2537,6 +2548,8 @@ more:
 	}
 
 more_kvec:
+	BUG_ON(!con->sock);
+
 	/* kvec data queued? */
 	if (con->out_kvec_left) {
 		ret = write_partial_kvec(con);
