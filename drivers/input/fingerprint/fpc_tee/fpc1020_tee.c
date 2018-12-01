@@ -724,8 +724,7 @@ static int fpc1020_probe(struct platform_device *pdev)
 
 	atomic_set(&fpc1020->wakeup_enabled, 1);
 
-	fpc1020->irqf = IRQF_TRIGGER_RISING | IRQF_ONESHOT |
-			IRQF_NO_SUSPEND | IRQF_PERF_CRITICAL;
+	fpc1020->irqf = IRQF_TRIGGER_RISING | IRQF_ONESHOT | IRQF_NO_SUSPEND;
 /*
 	if (of_property_read_bool(dev->of_node, "fpc,enable-wakeup")) {
 		fpc1020->irqf |= IRQF_NO_SUSPEND;
