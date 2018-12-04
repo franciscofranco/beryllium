@@ -63,8 +63,6 @@ extern int32_t nvt_mp_proc_init(void);
 
 struct nvt_ts_data *ts;
 
-static struct workqueue_struct *nvt_wq;
-
 #if BOOT_UPDATE_FIRMWARE
 static struct workqueue_struct *nvt_fwu_wq;
 extern void Boot_Update_Firmware(struct work_struct *work);
@@ -1151,7 +1149,7 @@ Description:
 return:
 	n.a.
 *******************************************************/
-static void nvt_ts_work_func(struct work_struct *work)
+static void nvt_ts_read_event(void)
 {
 	int32_t ret = -1;
 	uint8_t point_data[POINT_DATA_LEN + 1] = {0};
@@ -1166,8 +1164,6 @@ static void nvt_ts_work_func(struct work_struct *work)
 #endif /* MT_PROTOCOL_B */
 	int32_t i = 0;
 	int32_t finger_cnt = 0;
-
-	mutex_lock(&ts->lock);
 
 	if (ts->dev_pm_suspend) {
 		ret = wait_for_completion_timeout(&ts->dev_pm_suspend_completion, msecs_to_jiffies(500));
@@ -1289,8 +1285,6 @@ static void nvt_ts_work_func(struct work_struct *work)
 
 XFER_ERROR:
 	enable_irq(ts->client->irq);
-
-	mutex_unlock(&ts->lock);
 }
 
 /*******************************************************
@@ -1300,13 +1294,23 @@ Description:
 return:
 	irq execute status.
 *******************************************************/
-static irqreturn_t nvt_ts_irq_handler(int32_t irq, void *dev_id)
+static irqreturn_t nvt_ts_irq_handler(int32_t irq, void *ptr)
 {
 	disable_irq_nosync(ts->client->irq);
 	if (bTouchIsAwake == 0) {
 		dev_dbg(&ts->client->dev, "%s gesture wakeup\n", __func__);
 	}
-	queue_work(nvt_wq, &ts->nvt_work);
+
+	/* prevent CPU from entering deep sleep */
+	pm_qos_update_request(&ts->pm_qos_req, 100);
+
+	mutex_lock(&ts->lock);
+
+	nvt_ts_read_event();
+
+	mutex_unlock(&ts->lock);
+
+	pm_qos_update_request(&ts->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 
 	return IRQ_HANDLED;
 }
@@ -1761,14 +1765,6 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 	nvt_get_fw_info();
 	mutex_unlock(&ts->lock);
 
-	/*---create workqueue---*/
-	nvt_wq = create_workqueue("nvt_wq");
-	if (!nvt_wq) {
-		NVT_ERR("nvt_wq create workqueue failed\n");
-		ret = -ENOMEM;
-		goto err_create_nvt_wq_failed;
-	}
-	INIT_WORK(&ts->nvt_work, nvt_ts_work_func);
 	/*---allocate input device---*/
 	ts->input_dev = input_allocate_device();
 	if (ts->input_dev == NULL) {
@@ -1842,13 +1838,19 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 
 	/*---set int-pin & request irq---*/
 	client->irq = gpio_to_irq(ts->irq_gpio);
+
+	pm_qos_add_request(&ts->pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
+		PM_QOS_DEFAULT_VALUE);
+
 	if (client->irq) {
 		NVT_LOG("int_trigger_type=%d\n", ts->int_trigger_type);
 
 #if WAKEUP_GESTURE
-		ret = request_irq(client->irq, nvt_ts_irq_handler, ts->int_trigger_type | IRQF_ONESHOT, client->name, ts);
+		ret = request_threaded_irq(client->irq, NULL, nvt_ts_irq_handler,
+			ts->int_trigger_type | IRQF_ONESHOT, client->name, ts);
 #else
-		ret = request_irq(client->irq, nvt_ts_irq_handler, ts->int_trigger_type, client->name, ts);
+		ret = request_threaded_irq(client->irq, NULL, nvt_ts_irq_handler,
+			ts->int_trigger_type, client->name, ts);
 #endif
 		if (ret != 0) {
 			NVT_ERR("request irq failed. ret=%d\n", ret);
@@ -2025,10 +2027,9 @@ err_create_nvt_fwu_wq_failed:
 #endif
 err_int_request_failed:
 err_input_register_device_failed:
+	mutex_destroy(&ts->lock);
 	input_free_device(ts->input_dev);
 err_input_dev_alloc_failed:
-err_create_nvt_wq_failed:
-	mutex_destroy(&ts->lock);
 err_chipvertrim_failed:
 err_check_functionality_failed:
 	gpio_free(ts->irq_gpio);
@@ -2069,6 +2070,8 @@ static int32_t nvt_ts_remove(struct i2c_client *client)
 	ts->nvt_tp_class = NULL;
 #endif
 	destroy_workqueue(ts->event_wq);
+
+	pm_qos_remove_request(&ts->pm_qos_req);
 
 	nvt_get_reg(ts, false);
 
@@ -2409,9 +2412,6 @@ return:
 static void __exit nvt_driver_exit(void)
 {
 	i2c_del_driver(&nvt_i2c_driver);
-
-	if (nvt_wq)
-		destroy_workqueue(nvt_wq);
 
 #if BOOT_UPDATE_FIRMWARE
 	if (nvt_fwu_wq)
