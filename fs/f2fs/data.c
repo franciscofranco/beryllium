@@ -377,6 +377,10 @@ int f2fs_submit_page_bio(struct f2fs_io_info *fio)
 			fio->encrypted_page : fio->page;
 	struct inode *inode = fio->page->mapping->host;
 
+	if (!f2fs_is_valid_blkaddr(fio->sbi, fio->new_blkaddr,
+			__is_meta_io(fio) ? META_GENERIC : DATA_GENERIC))
+		return -EFAULT;
+
 	trace_f2fs_submit_page_bio(page, fio);
 	f2fs_trace_ios(fio, 0);
 
@@ -427,9 +431,9 @@ next:
 		spin_unlock(&io->io_lock);
 	}
 
-	if (fio->old_blkaddr != NEW_ADDR)
-		verify_block_addr(sbi, fio->old_blkaddr);
-	verify_block_addr(sbi, fio->new_blkaddr);
+	if (__is_valid_data_blkaddr(fio->old_blkaddr))
+		verify_block_addr(fio, fio->old_blkaddr);
+	verify_block_addr(fio, fio->new_blkaddr);
 
 	bio_page = fio->encrypted_page ? fio->encrypted_page : fio->page;
 	inode = fio->page->mapping->host;
@@ -1005,7 +1009,13 @@ next_dnode:
 next_block:
 	blkaddr = datablock_addr(dn.inode, dn.node_page, dn.ofs_in_node);
 
-	if (blkaddr == NEW_ADDR || blkaddr == NULL_ADDR) {
+	if (__is_valid_data_blkaddr(blkaddr) &&
+		!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC)) {
+		err = -EFAULT;
+		goto sync_out;
+	}
+
+	if (!is_valid_data_blkaddr(sbi, blkaddr)) {
 		if (create) {
 			if (unlikely(f2fs_cp_error(sbi))) {
 				err = -EIO;
@@ -1433,6 +1443,10 @@ got_it:
 				SetPageUptodate(page);
 				goto confused;
 			}
+
+			if (!f2fs_is_valid_blkaddr(F2FS_I_SB(inode), block_nr,
+								DATA_GENERIC))
+				goto set_error_page;
 		} else {
 			zero_user_segment(page, 0, PAGE_SIZE);
 			if (!PageUptodate(page))
@@ -1676,11 +1690,18 @@ int do_write_data_page(struct f2fs_io_info *fio)
 		goto out_writepage;
 	}
 got_it:
+	if (__is_valid_data_blkaddr(fio->old_blkaddr) &&
+		!f2fs_is_valid_blkaddr(fio->sbi, fio->old_blkaddr,
+				DATA_GENERIC)) {
+		err = -EFAULT;
+		goto out_writepage;
+	}
 	/*
 	 * If current allocation needs SSR,
 	 * it had better in-place writes for updated data.
 	 */
-	if (ipu_force || (valid_ipu_blkaddr(fio) && need_inplace_update(fio))) {
+	if (ipu_force || (is_valid_data_blkaddr(fio->sbi, fio->old_blkaddr) &&
+					need_inplace_update(fio))) {
 		err = encrypt_one_page(fio);
 		if (err)
 			goto out_writepage;
