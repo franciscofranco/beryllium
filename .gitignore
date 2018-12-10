@@ -118,3 +118,9 @@ all.config
 
 # fetched Android config fragments
 kernel/configs/android-*.cfg
+build.sh
+net/wireguard/
+out/
+repackage_ramdisk.sh
+upload.sh
+version
