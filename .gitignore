@@ -122,3 +122,4 @@ build.sh
 out/
 repackage_ramdisk.sh
 version
+upload.sh
