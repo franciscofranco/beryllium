@@ -1362,7 +1362,7 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 			bv.bv_len = min_t(unsigned int, PAGE_SIZE - offset,
 							unwritten);
 			if (zram_bvec_rw(zram, &bv, index, offset,
-					op_is_write(bio_op(bio))) < 0, bio)
+					op_is_write(bio_op(bio)) < 0, bio))
 				goto out;
 
 			bv.bv_offset += bv.bv_len;
@@ -1728,7 +1728,7 @@ static int zram_add(void)
 
 	disk_to_dev(zram->disk)->groups = zram_disk_attr_groups;
 
-	zram->disk->queue->backing_dev_info.capabilities |=
+	zram->disk->queue->backing_dev_info->capabilities |=
 					BDI_CAP_STABLE_WRITES;
 	add_disk(zram->disk);
 
