@@ -1749,6 +1749,19 @@ out_unlock:
 	return retval ?: nbytes;
 }
 
+static ssize_t cpuset_write_cpus_resmask(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	char new_buf[SZ_16];
+
+	/* Restrict top-app to gold cluster */
+	if (!memcmp(of->kn->parent->name, "top-app", sizeof("top-app")) &&
+		cpumap_print_to_pagebuf(true, new_buf, cpu_perf_mask))
+		buf = new_buf;
+
+	return cpuset_write_resmask(of, buf, nbytes, off);
+}
+
 /*
  * These ascii lists should be read in a single call, by using a user
  * buffer large enough to hold the entire map.  If read in smaller
@@ -1841,7 +1854,7 @@ static struct cftype files[] = {
 	{
 		.name = "cpus",
 		.seq_show = cpuset_common_seq_show,
-		.write = cpuset_write_resmask,
+		.write = cpuset_write_cpus_resmask,
 		.max_write_len = (100U + 6 * NR_CPUS),
 		.private = FILE_CPULIST,
 	},
