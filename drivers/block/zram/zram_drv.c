@@ -1378,7 +1378,7 @@ compress_again:
 		return ret;
 	}
 
-	if (comp_len > max_zpage_size)
+	if (unlikely(comp_len >= huge_class_size))
 		comp_len = PAGE_SIZE;
 	/*
 	 * handle allocation has 2 paths:
