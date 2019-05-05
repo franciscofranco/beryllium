@@ -614,24 +614,26 @@ EXPORT_SYMBOL_GPL(cpuidle_register);
 
 #ifdef CONFIG_SMP
 
-static void wake_up_idle_cpus(void *v)
+static void wake_up_idle_cpus(unsigned long l, void *v)
 {
-	int cpu;
+	static unsigned long prev_latency = ULONG_MAX;
 	struct cpumask cpus;
+	int cpu;
 
-	preempt_disable();
-	if (v) {
-		cpumask_andnot(&cpus, v, cpu_isolated_mask);
-		cpumask_and(&cpus, &cpus, cpu_online_mask);
-	} else
+	if (l < prev_latency) {
 		cpumask_andnot(&cpus, cpu_online_mask, cpu_isolated_mask);
-
-	for_each_cpu(cpu, &cpus) {
-		if (cpu == smp_processor_id())
-			continue;
-		wake_up_if_idle(cpu);
+		preempt_disable();
+		for_each_cpu(cpu, &cpus) {
+			if (cpu == smp_processor_id())
+				continue;
+			wake_up_if_idle(cpu);
+		}
+		preempt_enable();
 	}
-	preempt_enable();
+
+	prev_latency = l;
+
+	
 }
 
 /*
@@ -643,7 +645,7 @@ static void wake_up_idle_cpus(void *v)
 static int cpuidle_latency_notify(struct notifier_block *b,
 		unsigned long l, void *v)
 {
-	wake_up_idle_cpus(v);
+	wake_up_idle_cpus(l, v);
 	return NOTIFY_OK;
 }
 
