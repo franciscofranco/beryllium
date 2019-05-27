@@ -115,7 +115,6 @@ struct intf_params {
  * @i2c_data: I2C register settings structure
  * @act_info: Sensor query cap structure
  * @of_node: Node ptr
- * @device_name: Device name
  */
 struct cam_actuator_ctrl_t {
 	char device_name[CAM_CTX_DEV_NAME_MAX_LENGTH];
